@@ -21,6 +21,7 @@ import TimelineView from "./components/TimelineView";
 import MissionView from "./components/MissionView";
 import SnakeRobotView from "./components/SnakeRobotView";
 import DonateView from "./components/DonateView";
+import NewsView from "./components/NewsView";
 import SatellitePlayground from "./components/SatellitePlayground";
 import SatellitePhoto, { prefetchSatelliteImages } from "./components/SatellitePhoto";
 import { FiRadio } from "react-icons/fi";
@@ -71,7 +72,7 @@ function App() {
   useEffect(() => {
     fetchFeatures()
       .then((data) => setFeatures(Array.isArray(data) ? data : []))
-      .catch(() => setError("Could not connect to backend. Is the server running on port 8000?"));
+      .catch(() => console.warn("Backend not reachable at port 8001 — map features unavailable until server starts."));
     fetchDashboard().then(setDashboardData).catch(() => {});
     prefetchSatelliteImages();
 
@@ -193,7 +194,7 @@ function App() {
         <LanguageToggle />
       </header>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner">{error} <button className="error-dismiss" onClick={() => setError(null)}>✕</button></div>}
 
       <div className="app-shell">
         <Sidebar activeView={activeView} onViewChange={setActiveView} />
@@ -269,6 +270,11 @@ function App() {
           {/* ===== DONATE ===== */}
           <div className={`view-panel ${activeView === "donate" ? "active" : ""}`}>
             <DonateView />
+          </div>
+
+          {/* ===== NEWS ===== */}
+          <div className={`view-panel ${activeView === "news" ? "active" : ""}`}>
+            <NewsView onNavigate={setActiveView} />
           </div>
         </div>
       </div>

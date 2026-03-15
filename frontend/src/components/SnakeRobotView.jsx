@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useLanguage } from "../i18n/LanguageContext";
-import { FiCpu, FiZap, FiSun, FiCamera, FiThermometer, FiDroplet, FiCheckCircle, FiAlertCircle, FiClock, FiArrowLeft, FiArrowRight, FiUploadCloud, FiPlay, FiRepeat } from "react-icons/fi";
+import { FiCpu, FiZap, FiSun, FiCamera, FiThermometer, FiDroplet, FiCheckCircle, FiAlertCircle, FiClock, FiArrowLeft, FiArrowRight, FiUploadCloud, FiPlay, FiRepeat, FiExternalLink } from "react-icons/fi";
 import "./SnakeRobotView.css";
 
 /* ── Scroll-triggered fade-in ── */
@@ -368,15 +368,46 @@ export default function SnakeRobotView({ onNavigate }) {
         </div>
       </FadeSection>
 
-      {/* ── FIELD FOOTAGE PLACEHOLDER ── */}
+      {/* ── RESEARCH POSTER ── */}
       <FadeSection className="snake-section">
         <h2 className="snake-section-title">
-          {isZh ? "\u5B9E\u5730\u6D4B\u8BD5\u7ED3\u679C" : "Field Test Results"}
+          {isZh ? "研究海报" : "Research Poster"}
         </h2>
-        <div className="footage-placeholder">
-          <FiCamera size={32} />
-          <strong>{isZh ? "2026\u5E74\u590F\u5B63\u66F4\u65B0" : "Coming Summer 2026"}</strong>
-          <p>{isZh ? "\u5B9E\u5730\u6D4B\u8BD5\u89C6\u9891\u3001\u7167\u7247\u548C\u6570\u636E\u5C06\u5728\u8FD9\u91CC\u5C55\u793A" : "Field test footage, photos, and data will appear here after the Taklimakan expedition"}</p>
+        <div className="snake-poster-wrapper">
+          <a href="/media/snakebot-poster.pdf" target="_blank" rel="noopener noreferrer">
+            <img
+              src="/media/snakebot-poster.png"
+              alt="Snakebot Research Poster"
+              className="snake-poster-img"
+            />
+            <span className="snake-poster-overlay">
+              <FiExternalLink size={20} />
+              {isZh ? "查看完整海报 (PDF)" : "View Full Poster (PDF)"}
+            </span>
+          </a>
+        </div>
+      </FadeSection>
+
+      {/* ── PRESENTATION VIDEO ── */}
+      <FadeSection className="snake-section">
+        <h2 className="snake-section-title">
+          {isZh ? "项目展示" : "Project Presentation"}
+        </h2>
+        <p className="snake-section-desc">
+          {isZh
+            ? "项目负责人向观众介绍蛇形机器人的设计与实现。"
+            : "The project lead presents the snakebot design and implementation to a live audience."}
+        </p>
+        <div className="snake-video-wrapper">
+          <video
+            controls
+            preload="metadata"
+            className="snake-video"
+            poster="/media/snakebot-poster.png"
+          >
+            <source src="/media/snakebot-presentation.mp4" type="video/mp4" />
+            {isZh ? "您的浏览器不支持视频标签。" : "Your browser does not support the video tag."}
+          </video>
         </div>
       </FadeSection>
 

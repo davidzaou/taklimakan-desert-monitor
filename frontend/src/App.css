@@ -115,6 +115,23 @@
   color: white;
   padding: 8px 24px;
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.error-dismiss {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.8;
+}
+
+.error-dismiss:hover {
+  opacity: 1;
 }
 
 /* ===== Dashboard Bar ===== */
@@ -1053,265 +1070,9 @@
 }
 
 /* ===== Projects View ===== */
-.projects-view {
-  padding: 24px;
-  overflow-y: auto;
-  flex: 1;
-}
+/* Old projects-view styles moved to ProjectsView.css */
 
-.projects-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.projects-header h2 {
-  margin: 0;
-  font-size: 20px;
-  color: #e0e0e0;
-}
-
-.projects-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #16213e;
-  border: 1px solid #2a2a4a;
-  border-radius: 6px;
-  padding: 6px 12px;
-  color: #8888aa;
-}
-
-.projects-search input {
-  background: transparent;
-  border: none;
-  color: #e0e0e0;
-  font-size: 13px;
-  outline: none;
-  width: 200px;
-}
-
-.projects-table {
-  background: #16213e;
-  border-radius: 10px;
-  border: 1px solid #2a2a4a;
-  overflow: hidden;
-}
-
-.projects-table-header {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1.5fr 0.5fr;
-  gap: 8px;
-  padding: 12px 16px;
-  background: #0d1117;
-  font-size: 11px;
-  color: #8888aa;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid #2a2a4a;
-}
-
-.projects-table-header .pt-cell {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.projects-table-header .pt-cell:hover {
-  color: #ccc;
-}
-
-.projects-table-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1.5fr 0.5fr;
-  gap: 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid #1a1a2e;
-  cursor: pointer;
-  transition: background 0.15s;
-  align-items: center;
-}
-
-.projects-table-row:hover {
-  background: rgba(145, 207, 96, 0.05);
-}
-
-.pt-cell {
-  font-size: 13px;
-}
-
-.pt-name {
-  font-weight: 600;
-  color: #e0e0e0;
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.status-badge.project {
-  background: rgba(224, 123, 57, 0.15);
-  color: #e07b39;
-}
-
-.status-badge.vegetation {
-  background: rgba(26, 152, 80, 0.15);
-  color: #1a9850;
-}
-
-.progress-bar-bg {
-  width: 100%;
-  height: 6px;
-  background: #0d1117;
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 4px;
-}
-
-.progress-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.3s;
-}
-
-.progress-text {
-  font-size: 11px;
-  color: #8888aa;
-}
-
-.health-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.projects-empty {
-  padding: 40px;
-  text-align: center;
-  color: #6a6a8a;
-}
-
-/* ===== Timeline View ===== */
-.timeline-view {
-  padding: 24px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.timeline-view h2 {
-  margin: 0 0 4px;
-  font-size: 20px;
-  color: #e0e0e0;
-}
-
-.timeline-subtitle {
-  color: #8888aa;
-  font-size: 13px;
-  margin: 0 0 32px;
-}
-
-.timeline-track-container {
-  position: relative;
-  padding: 80px 0;
-  overflow-x: auto;
-}
-
-.timeline-track-line {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #2a2a4a, #3a3a5a, #2a2a4a);
-  transform: translateY(-50%);
-}
-
-.timeline-cards {
-  display: flex;
-  gap: 40px;
-  min-width: max-content;
-  padding: 0 20px;
-  position: relative;
-}
-
-.timeline-card {
-  position: relative;
-  width: 220px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.timeline-dot {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  border: 3px solid #0d1117;
-  z-index: 2;
-  transition: transform 0.2s;
-}
-
-.timeline-card:hover .timeline-dot {
-  transform: translate(-50%, -50%) scale(1.3);
-}
-
-.timeline-card-content {
-  background: #16213e;
-  border: 1px solid #2a2a4a;
-  border-top: 3px solid;
-  border-radius: 10px;
-  padding: 16px;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.timeline-card:hover .timeline-card-content {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-}
-
-.timeline-card.above .timeline-card-content {
-  margin-bottom: 50px;
-}
-
-.timeline-card.below .timeline-card-content {
-  margin-top: 50px;
-}
-
-.timeline-card-icon {
-  font-size: 24px;
-  margin-bottom: 8px;
-}
-
-.timeline-card-year {
-  font-size: 24px;
-  font-weight: 700;
-  color: #91cf60;
-  margin-bottom: 4px;
-}
-
-.timeline-card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #e0e0e0;
-  margin: 0 0 6px;
-}
-
-.timeline-card-desc {
-  font-size: 12px;
-  color: #8888aa;
-  line-height: 1.5;
-  margin: 0;
-}
+/* Old timeline-view styles moved to TimelineView.css */
 
 /* ===== Responsive ===== */
 @media (max-width: 768px) {

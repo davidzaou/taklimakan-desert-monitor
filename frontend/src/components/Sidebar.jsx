@@ -1,5 +1,5 @@
 import { useLanguage } from "../i18n/LanguageContext";
-import { FiMap, FiActivity, FiFolder, FiClock, FiHeart, FiCpu, FiGift, FiGlobe } from "react-icons/fi";
+import { FiMap, FiActivity, FiFolder, FiClock, FiHeart, FiCpu, FiGift, FiGlobe, FiFileText } from "react-icons/fi";
 import "./Sidebar.css";
 
 const VIEWS = [
@@ -11,6 +11,7 @@ const VIEWS = [
   { id: "snake", icon: FiCpu, labelKey: "viewSnake" },
   { id: "donate", icon: FiGift, labelKey: "viewDonate" },
   { id: "timeline", icon: FiClock, labelKey: "viewTimeline" },
+  { id: "news", icon: FiFileText, labelKey: "viewNews" },
 ];
 
 export default function Sidebar({ activeView, onViewChange }) {
