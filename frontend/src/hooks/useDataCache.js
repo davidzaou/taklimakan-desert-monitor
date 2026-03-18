@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from "react";
 
 const _cache = new Map();   // key → { data, ts }
 const STALE_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_ENTRIES = 50;
 
 export default function useDataCache(key, fetchFn) {
   const entry = _cache.get(key);
@@ -27,7 +28,9 @@ export default function useDataCache(key, fetchFn) {
         fetchRef.current().then(d => {
           _cache.set(key, { data: d, ts: Date.now() });
           setData(d);
-        }).catch(() => {});
+        }).catch(err => {
+          console.warn(`[cache] background refresh failed for "${key}":`, err.message);
+        });
       }
       return;
     }
@@ -37,18 +40,35 @@ export default function useDataCache(key, fetchFn) {
       _cache.set(key, { data: d, ts: Date.now() });
       setData(d);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(err => {
+      console.warn(`[cache] fetch failed for "${key}":`, err.message);
+      setLoading(false);
+    });
   }, [key]);
 
   return { data, loading };
 }
 
+function _evictIfNeeded() {
+  if (_cache.size <= MAX_ENTRIES) return;
+  // Evict oldest entry (LRU — Map preserves insertion order)
+  const oldest = _cache.keys().next().value;
+  _cache.delete(oldest);
+}
+
 /** Manually set a cache entry (e.g. from polling results). */
 export function setCacheEntry(key, data) {
+  _cache.delete(key); // re-insert to move to end (most recent)
   _cache.set(key, { data, ts: Date.now() });
+  _evictIfNeeded();
 }
 
 /** Check if a key is already cached. */
 export function hasCacheEntry(key) {
   return _cache.has(key);
+}
+
+/** Clear all cached entries. */
+export function clearCache() {
+  _cache.clear();
 }

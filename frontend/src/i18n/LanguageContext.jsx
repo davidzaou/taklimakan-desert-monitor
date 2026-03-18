@@ -1,10 +1,17 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { translations } from "./translations";
 
 const LanguageContext = createContext();
 
 export function LanguageProvider({ children }) {
-  const [lang, setLang] = useState("en");
+  const [lang, setLangState] = useState(() => {
+    try { return localStorage.getItem("lang") || "en"; } catch { return "en"; }
+  });
+
+  const setLang = useCallback((newLang) => {
+    setLangState(newLang);
+    try { localStorage.setItem("lang", newLang); } catch { /* ignore */ }
+  }, []);
 
   function t(key) {
     return translations[lang]?.[key] || translations.en[key] || key;

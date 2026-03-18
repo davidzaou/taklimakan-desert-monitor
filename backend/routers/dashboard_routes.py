@@ -1,17 +1,47 @@
 """Dashboard and satellite preview endpoints."""
 
+import asyncio
 import math
 import os
 import random
 import logging
+from datetime import datetime
 
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, field_validator
+
+from rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
 random.seed(42)
+
+_CURRENT_YEAR = datetime.now().year
+_TAK_BBOX = {"min_lng": 73, "max_lng": 92, "min_lat": 34, "max_lat": 45}
+
+
+def _validate_bounds(bounds: list) -> list:
+    """Validate a 4-element bounds array with valid lat/lng."""
+    if not isinstance(bounds, list) or len(bounds) != 4:
+        raise ValueError("bounds must be a 4-element array [minLng, minLat, maxLng, maxLat]")
+    min_lng, min_lat, max_lng, max_lat = bounds
+    for v in bounds:
+        if not isinstance(v, (int, float)):
+            raise ValueError("bounds values must be numbers")
+    if not (_TAK_BBOX["min_lng"] <= min_lng <= _TAK_BBOX["max_lng"]):
+        raise ValueError(f"minLng {min_lng} outside valid range")
+    if not (_TAK_BBOX["min_lng"] <= max_lng <= _TAK_BBOX["max_lng"]):
+        raise ValueError(f"maxLng {max_lng} outside valid range")
+    if not (_TAK_BBOX["min_lat"] <= min_lat <= _TAK_BBOX["max_lat"]):
+        raise ValueError(f"minLat {min_lat} outside valid range")
+    if not (_TAK_BBOX["min_lat"] <= max_lat <= _TAK_BBOX["max_lat"]):
+        raise ValueError(f"maxLat {max_lat} outside valid range")
+    if min_lng >= max_lng:
+        raise ValueError("minLng must be less than maxLng")
+    if min_lat >= max_lat:
+        raise ValueError("minLat must be less than maxLat")
+    return bounds
 
 
 def _generate_belt_ndvi(base: float, trend: float):
@@ -24,7 +54,8 @@ def _generate_belt_ndvi(base: float, trend: float):
 
 
 @router.get("/dashboard/regional")
-def get_regional_data():
+@limiter.limit("60/minute")
+def get_regional_data(request: Request):
     return {
         "source": "demo",
         "data": {
@@ -42,6 +73,25 @@ class SatPreviewRequest(BaseModel):
     bounds: list  # [minLng, minLat, maxLng, maxLat]
     year: int = 2024
     resolution: int = 60
+
+    @field_validator("bounds")
+    @classmethod
+    def check_bounds(cls, v):
+        return _validate_bounds(v)
+
+    @field_validator("year")
+    @classmethod
+    def check_year(cls, v):
+        if v < 2015 or v > _CURRENT_YEAR:
+            raise ValueError(f"year must be between 2015 and {_CURRENT_YEAR}")
+        return v
+
+    @field_validator("resolution")
+    @classmethod
+    def check_resolution(cls, v):
+        if v < 5 or v > 100:
+            raise ValueError("resolution must be between 5 and 100")
+        return v
 
 
 def _generate_sat_grid(bounds, year, resolution):
@@ -133,10 +183,13 @@ def _generate_sat_timeseries(bounds, start_year, end_year):
 
 
 @router.post("/satellite/preview")
-def get_satellite_preview(request: SatPreviewRequest):
+@limiter.limit("30/minute")
+async def get_satellite_preview(request: Request, body: SatPreviewRequest):
     """Fast satellite preview — local grid + optional GEE thumbnail."""
-    grid = _generate_sat_grid(request.bounds, request.year, request.resolution)
-    ts = _generate_sat_timeseries(request.bounds, 2017, 2025)
+    grid, ts = await asyncio.gather(
+        asyncio.to_thread(_generate_sat_grid, body.bounds, body.year, body.resolution),
+        asyncio.to_thread(_generate_sat_timeseries, body.bounds, 2017, 2025),
+    )
 
     use_gee = bool(os.environ.get("GEE_SERVICE_ACCOUNT_KEY") or os.environ.get("GEE_PROJECT"))
     source = "gee-simulated" if use_gee else "demo"
@@ -145,8 +198,8 @@ def get_satellite_preview(request: SatPreviewRequest):
         "grid": grid,
         "timeseries": ts,
         "source": source,
-        "year": request.year,
-        "resolution": request.resolution,
+        "year": body.year,
+        "resolution": body.resolution,
     }
 
 
@@ -156,9 +209,36 @@ class SatImageRequest(BaseModel):
     band: str = "ndvi"  # ndvi | truecolor | falsecolor
     width: int = 900
 
+    @field_validator("bounds")
+    @classmethod
+    def check_bounds(cls, v):
+        return _validate_bounds(v)
+
+    @field_validator("year")
+    @classmethod
+    def check_year(cls, v):
+        if v < 2015 or v > _CURRENT_YEAR:
+            raise ValueError(f"year must be between 2015 and {_CURRENT_YEAR}")
+        return v
+
+    @field_validator("width")
+    @classmethod
+    def check_width(cls, v):
+        if v < 1 or v > 2048:
+            raise ValueError("width must be between 1 and 2048")
+        return v
+
+    @field_validator("band")
+    @classmethod
+    def check_band(cls, v):
+        if v not in ("ndvi", "truecolor", "falsecolor"):
+            raise ValueError("band must be one of: ndvi, truecolor, falsecolor")
+        return v
+
 
 @router.post("/satellite/image")
-def get_satellite_image(request: SatImageRequest):
+@limiter.limit("30/minute")
+async def get_satellite_image(request: Request, body: SatImageRequest):
     """
     Get real Sentinel-2 satellite image URL via GEE.
     Returns a thumbnail URL that renders actual satellite imagery.
@@ -170,43 +250,46 @@ def get_satellite_image(request: SatImageRequest):
 
     try:
         from services.gee_service import initialize, is_available
-        if not initialize():
+        if not await asyncio.to_thread(initialize):
             from services.gee_service import get_init_error
             return {"url": None, "source": "demo", "error": get_init_error()}
 
         import ee
-        min_lng, min_lat, max_lng, max_lat = request.bounds
-        region = ee.Geometry.Rectangle([min_lng, min_lat, max_lng, max_lat])
 
-        start_date = f"{request.year}-04-01"
-        end_date = f"{request.year}-10-31"
+        def _get_thumb_url():
+            min_lng, min_lat, max_lng, max_lat = body.bounds
+            region = ee.Geometry.Rectangle([min_lng, min_lat, max_lng, max_lat])
 
-        from services.gee_service import get_sentinel2_collection, compute_ndvi
+            start_date = f"{body.year}-04-01"
+            end_date = f"{body.year}-10-31"
 
-        collection = get_sentinel2_collection(region, start_date, end_date)
-        composite = collection.median().clip(region)
+            from services.gee_service import get_sentinel2_collection, compute_ndvi
 
-        if request.band == "truecolor":
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        elif request.band == "falsecolor":
-            vis = {"bands": ["B8", "B4", "B3"], "min": 0, "max": 5000}
-        else:
-            ndvi = composite.normalizedDifference(["B8", "B4"]).rename("ndvi")
-            composite = ndvi
-            vis = {
-                "min": -0.1, "max": 0.8,
-                "palette": ["#3a2005", "#8B4513", "#d73027", "#fc8d59", "#fee08b",
-                            "#d9ef8b", "#91cf60", "#4caf50", "#1a9850", "#006837"],
-            }
+            collection = get_sentinel2_collection(region, start_date, end_date)
+            composite = collection.median().clip(region)
 
-        thumb_url = composite.getThumbURL({
-            "region": region,
-            "dimensions": request.width,
-            "format": "png",
-            **vis,
-        })
+            if body.band == "truecolor":
+                vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+            elif body.band == "falsecolor":
+                vis = {"bands": ["B8", "B4", "B3"], "min": 0, "max": 5000}
+            else:
+                ndvi = composite.normalizedDifference(["B8", "B4"]).rename("ndvi")
+                composite = ndvi
+                vis = {
+                    "min": -0.1, "max": 0.8,
+                    "palette": ["#3a2005", "#8B4513", "#d73027", "#fc8d59", "#fee08b",
+                                "#d9ef8b", "#91cf60", "#4caf50", "#1a9850", "#006837"],
+                }
 
-        return {"url": thumb_url, "source": "gee", "band": request.band, "year": request.year}
+            return composite.getThumbURL({
+                "region": region,
+                "dimensions": body.width,
+                "format": "png",
+                **vis,
+            })
+
+        thumb_url = await asyncio.to_thread(_get_thumb_url)
+        return {"url": thumb_url, "source": "gee", "band": body.band, "year": body.year}
 
     except Exception as e:
         logger.error("GEE image failed: %s", e)
@@ -217,9 +300,22 @@ class SatStatsRequest(BaseModel):
     bounds: list
     year: int = 2024
 
+    @field_validator("bounds")
+    @classmethod
+    def check_bounds(cls, v):
+        return _validate_bounds(v)
+
+    @field_validator("year")
+    @classmethod
+    def check_year(cls, v):
+        if v < 2015 or v > _CURRENT_YEAR:
+            raise ValueError(f"year must be between 2015 and {_CURRENT_YEAR}")
+        return v
+
 
 @router.post("/satellite/stats")
-def get_satellite_stats(request: SatStatsRequest):
+@limiter.limit("30/minute")
+async def get_satellite_stats(request: Request, body: SatStatsRequest):
     """
     Real NDVI statistics for a region via GEE.
     Single reduceRegion call — returns mean/min/max NDVI + vegetation area.
@@ -227,51 +323,54 @@ def get_satellite_stats(request: SatStatsRequest):
     """
     use_gee = bool(os.environ.get("GEE_SERVICE_ACCOUNT_KEY") or os.environ.get("GEE_PROJECT"))
     if not use_gee:
-        return _local_stats(request.bounds, request.year)
+        return await asyncio.to_thread(_local_stats, body.bounds, body.year)
 
     try:
         from services.gee_service import initialize
-        if not initialize():
-            return _local_stats(request.bounds, request.year)
+        if not await asyncio.to_thread(initialize):
+            return await asyncio.to_thread(_local_stats, body.bounds, body.year)
 
-        import ee
-        from services.gee_service import get_sentinel2_collection, compute_ndvi
+        def _gee_stats():
+            import ee
+            from services.gee_service import get_sentinel2_collection, compute_ndvi
 
-        min_lng, min_lat, max_lng, max_lat = request.bounds
-        region = ee.Geometry.Rectangle([min_lng, min_lat, max_lng, max_lat])
-        collection = get_sentinel2_collection(region, f"{request.year}-04-01", f"{request.year}-10-31")
-        composite = collection.median().clip(region)
-        ndvi = composite.normalizedDifference(["B8", "B4"]).rename("ndvi")
+            min_lng, min_lat, max_lng, max_lat = body.bounds
+            region = ee.Geometry.Rectangle([min_lng, min_lat, max_lng, max_lat])
+            collection = get_sentinel2_collection(region, f"{body.year}-04-01", f"{body.year}-10-31")
+            composite = collection.median().clip(region)
+            ndvi = composite.normalizedDifference(["B8", "B4"]).rename("ndvi")
 
-        # Get mean/min/max in one call
-        stats = ndvi.reduceRegion(
-            reducer=ee.Reducer.mean().combine(ee.Reducer.min(), sharedInputs=True).combine(ee.Reducer.max(), sharedInputs=True),
-            geometry=region, scale=250, maxPixels=1e8,
-        ).getInfo()
+            # Get mean/min/max in one call
+            stats = ndvi.reduceRegion(
+                reducer=ee.Reducer.mean().combine(ee.Reducer.min(), sharedInputs=True).combine(ee.Reducer.max(), sharedInputs=True),
+                geometry=region, scale=250, maxPixels=1e8,
+            ).getInfo()
 
-        # Count vegetated pixels (NDVI > 0.2) vs total
-        veg_mask = ndvi.gt(0.2)
-        bare_mask = ndvi.lt(0.1)
-        total_area = ee.Image.pixelArea().reduceRegion(reducer=ee.Reducer.sum(), geometry=region, scale=250, maxPixels=1e8).get("area")
-        veg_area = veg_mask.multiply(ee.Image.pixelArea()).reduceRegion(reducer=ee.Reducer.sum(), geometry=region, scale=250, maxPixels=1e8).get("ndvi")
-        bare_area = bare_mask.multiply(ee.Image.pixelArea()).reduceRegion(reducer=ee.Reducer.sum(), geometry=region, scale=250, maxPixels=1e8).get("ndvi")
+            # Count vegetated pixels (NDVI > 0.2) vs total
+            veg_mask = ndvi.gt(0.2)
+            bare_mask = ndvi.lt(0.1)
+            total_area = ee.Image.pixelArea().reduceRegion(reducer=ee.Reducer.sum(), geometry=region, scale=250, maxPixels=1e8).get("area")
+            veg_area = veg_mask.multiply(ee.Image.pixelArea()).reduceRegion(reducer=ee.Reducer.sum(), geometry=region, scale=250, maxPixels=1e8).get("ndvi")
+            bare_area = bare_mask.multiply(ee.Image.pixelArea()).reduceRegion(reducer=ee.Reducer.sum(), geometry=region, scale=250, maxPixels=1e8).get("ndvi")
 
-        total_val = total_area.getInfo() or 1
-        veg_val = veg_area.getInfo() or 0
-        bare_val = bare_area.getInfo() or 0
+            total_val = total_area.getInfo() or 1
+            veg_val = veg_area.getInfo() or 0
+            bare_val = bare_area.getInfo() or 0
 
-        return {
-            "source": "gee",
-            "mean": round(stats.get("ndvi_mean", 0) or 0, 4),
-            "min": round(stats.get("ndvi_min", 0) or 0, 4),
-            "max": round(stats.get("ndvi_max", 0) or 0, 4),
-            "vegPct": round(veg_val / total_val * 100, 1),
-            "barePct": round(bare_val / total_val * 100, 1),
-        }
+            return {
+                "source": "gee",
+                "mean": round(stats.get("ndvi_mean", 0) or 0, 4),
+                "min": round(stats.get("ndvi_min", 0) or 0, 4),
+                "max": round(stats.get("ndvi_max", 0) or 0, 4),
+                "vegPct": round(veg_val / total_val * 100, 1),
+                "barePct": round(bare_val / total_val * 100, 1),
+            }
+
+        return await asyncio.to_thread(_gee_stats)
 
     except Exception as e:
         logger.error("GEE stats failed: %s", e)
-        return _local_stats(request.bounds, request.year)
+        return await asyncio.to_thread(_local_stats, body.bounds, body.year)
 
 
 def _local_stats(bounds, year):
@@ -293,61 +392,77 @@ class SatChangeRequest(BaseModel):
     year1: int
     year2: int
 
+    @field_validator("bounds")
+    @classmethod
+    def check_bounds(cls, v):
+        return _validate_bounds(v)
+
+    @field_validator("year1", "year2")
+    @classmethod
+    def check_years(cls, v, info):
+        if v < 2015 or v > _CURRENT_YEAR:
+            raise ValueError(f"{info.field_name} must be between 2015 and {_CURRENT_YEAR}")
+        return v
+
 
 @router.post("/satellite/change")
-def get_satellite_change(request: SatChangeRequest):
+@limiter.limit("30/minute")
+async def get_satellite_change(request: Request, body: SatChangeRequest):
     """
     Real change detection between two years via GEE.
     Returns gain/loss/stable percentages with real satellite data.
     """
     use_gee = bool(os.environ.get("GEE_SERVICE_ACCOUNT_KEY") or os.environ.get("GEE_PROJECT"))
     if not use_gee:
-        return _local_change(request.bounds, request.year1, request.year2)
+        return await asyncio.to_thread(_local_change, body.bounds, body.year1, body.year2)
 
     try:
         from services.gee_service import initialize
-        if not initialize():
-            return _local_change(request.bounds, request.year1, request.year2)
+        if not await asyncio.to_thread(initialize):
+            return await asyncio.to_thread(_local_change, body.bounds, body.year1, body.year2)
 
-        import ee
-        from services.gee_service import get_sentinel2_collection
+        def _gee_change():
+            import ee
+            from services.gee_service import get_sentinel2_collection
 
-        min_lng, min_lat, max_lng, max_lat = request.bounds
-        region = ee.Geometry.Rectangle([min_lng, min_lat, max_lng, max_lat])
+            min_lng, min_lat, max_lng, max_lat = body.bounds
+            region = ee.Geometry.Rectangle([min_lng, min_lat, max_lng, max_lat])
 
-        def get_ndvi_composite(yr):
-            col = get_sentinel2_collection(region, f"{yr}-04-01", f"{yr}-10-31")
-            return col.median().clip(region).normalizedDifference(["B8", "B4"]).rename("ndvi")
+            def get_ndvi_composite(yr):
+                col = get_sentinel2_collection(region, f"{yr}-04-01", f"{yr}-10-31")
+                return col.median().clip(region).normalizedDifference(["B8", "B4"]).rename("ndvi")
 
-        ndvi1 = get_ndvi_composite(request.year1)
-        ndvi2 = get_ndvi_composite(request.year2)
-        change = ndvi2.subtract(ndvi1).rename("change")
+            ndvi1 = get_ndvi_composite(body.year1)
+            ndvi2 = get_ndvi_composite(body.year2)
+            change = ndvi2.subtract(ndvi1).rename("change")
 
-        stats = change.reduceRegion(
-            reducer=ee.Reducer.mean().combine(ee.Reducer.min(), sharedInputs=True).combine(ee.Reducer.max(), sharedInputs=True),
-            geometry=region, scale=250, maxPixels=1e8,
-        ).getInfo()
+            stats = change.reduceRegion(
+                reducer=ee.Reducer.mean().combine(ee.Reducer.min(), sharedInputs=True).combine(ee.Reducer.max(), sharedInputs=True),
+                geometry=region, scale=250, maxPixels=1e8,
+            ).getInfo()
 
-        total_pixels = ee.Image.constant(1).reduceRegion(reducer=ee.Reducer.count(), geometry=region, scale=250, maxPixels=1e8).values().get(0)
-        gained = change.gt(0.05).selfMask().reduceRegion(reducer=ee.Reducer.count(), geometry=region, scale=250, maxPixels=1e8).values().get(0)
-        lost = change.lt(-0.05).selfMask().reduceRegion(reducer=ee.Reducer.count(), geometry=region, scale=250, maxPixels=1e8).values().get(0)
+            total_pixels = ee.Image.constant(1).reduceRegion(reducer=ee.Reducer.count(), geometry=region, scale=250, maxPixels=1e8).values().get(0)
+            gained = change.gt(0.05).selfMask().reduceRegion(reducer=ee.Reducer.count(), geometry=region, scale=250, maxPixels=1e8).values().get(0)
+            lost = change.lt(-0.05).selfMask().reduceRegion(reducer=ee.Reducer.count(), geometry=region, scale=250, maxPixels=1e8).values().get(0)
 
-        total_val = total_pixels.getInfo() or 1
-        gained_val = gained.getInfo() or 0
-        lost_val = lost.getInfo() or 0
-        stable_val = total_val - gained_val - lost_val
+            total_val = total_pixels.getInfo() or 1
+            gained_val = gained.getInfo() or 0
+            lost_val = lost.getInfo() or 0
+            stable_val = total_val - gained_val - lost_val
 
-        return {
-            "source": "gee",
-            "meanChange": round(stats.get("change_mean", 0) or 0, 4),
-            "gainedPct": round(gained_val / total_val * 100, 1),
-            "lostPct": round(lost_val / total_val * 100, 1),
-            "stablePct": round(stable_val / total_val * 100, 1),
-        }
+            return {
+                "source": "gee",
+                "meanChange": round(stats.get("change_mean", 0) or 0, 4),
+                "gainedPct": round(gained_val / total_val * 100, 1),
+                "lostPct": round(lost_val / total_val * 100, 1),
+                "stablePct": round(stable_val / total_val * 100, 1),
+            }
+
+        return await asyncio.to_thread(_gee_change)
 
     except Exception as e:
         logger.error("GEE change failed: %s", e)
-        return _local_change(request.bounds, request.year1, request.year2)
+        return await asyncio.to_thread(_local_change, body.bounds, body.year1, body.year2)
 
 
 def _local_change(bounds, year1, year2):

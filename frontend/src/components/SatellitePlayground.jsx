@@ -260,20 +260,30 @@ export default function SatellitePlayground() {
       setCacheLoading(false);
       return;
     }
-    let interval;
+    let timeoutId;
+    let retries = 0;
+    const MAX_RETRIES = 5;
     function poll() {
       fetchNdviGridCache().then(res => {
+        retries = 0;
         if (res.status === "ready") {
           setCachedGrid(res.data);
           setCacheSource(res.source);
           setCacheLoading(false);
-          clearInterval(interval);
+        } else {
+          timeoutId = setTimeout(poll, 3000);
         }
-      }).catch(() => {});
+      }).catch(() => {
+        retries++;
+        if (retries < MAX_RETRIES) {
+          timeoutId = setTimeout(poll, 3000 * retries);
+        } else {
+          setCacheLoading(false);
+        }
+      });
     }
     poll();
-    interval = setInterval(poll, 3000);
-    return () => clearInterval(interval);
+    return () => clearTimeout(timeoutId);
   }, []);
 
   // Persist year/zone selections to localStorage
@@ -565,7 +575,7 @@ export default function SatellitePlayground() {
 
             <div className="pg-point-stats">
               <div className="pg-point-stat">
-                <span className="pg-point-val" style={{ color: "#91cf60" }}>{clickedData.ndvi.toFixed(3)}</span>
+                <span className="pg-point-val" style={{ color: "#91cf60" }}>{clickedData.ndvi?.toFixed(3) ?? "—"}</span>
                 <span className="pg-point-lbl">NDVI ({year})</span>
               </div>
               <div className="pg-point-stat">
@@ -586,16 +596,16 @@ export default function SatellitePlayground() {
                     <h4>{isZh ? "\u53D8\u5316" : "Change"} ({yearB} \u2192 {year})</h4>
                     <div className="pg-change-row">
                       <span>NDVI {yearB}:</span>
-                      <strong>{clickedData.ndviB.toFixed(3)}</strong>
+                      <strong>{clickedData.ndviB?.toFixed(3) ?? "—"}</strong>
                     </div>
                     <div className="pg-change-row">
                       <span>NDVI {year}:</span>
-                      <strong>{clickedData.ndvi.toFixed(3)}</strong>
+                      <strong>{clickedData.ndvi?.toFixed(3) ?? "—"}</strong>
                     </div>
                     <div className="pg-change-row">
                       <span>{isZh ? "\u53D8\u5316" : "Change"}:</span>
-                      <strong style={{ color: clickedData.change >= 0 ? "#4CAF50" : "#ef5350" }}>
-                        {clickedData.change >= 0 ? "+" : ""}{clickedData.change.toFixed(4)}
+                      <strong style={{ color: (clickedData.change ?? 0) >= 0 ? "#4CAF50" : "#ef5350" }}>
+                        {(clickedData.change ?? 0) >= 0 ? "+" : ""}{clickedData.change?.toFixed(4) ?? "—"}
                       </strong>
                     </div>
                   </div>
@@ -611,7 +621,7 @@ export default function SatellitePlayground() {
                         return (
                           <div key={d.year} className="pg-trend-col">
                             <div className="pg-trend-bar" style={{ height: `${h}px`, background: `rgb(${ndviColor(v).join(",")})` }}
-                              title={`${d.year}: ${v.toFixed(3)}`} />
+                              title={`${d.year}: ${v?.toFixed(3) ?? "—"}`} />
                             <span className="pg-trend-yr">{d.year.toString().slice(2)}</span>
                           </div>
                         );
@@ -636,10 +646,10 @@ export default function SatellitePlayground() {
             ) : regionStats ? (
               <>
                 <div className="pg-region-stats">
-                  <div className="pg-rstat"><span className="pg-rval" style={{ color: "#91cf60" }}>{regionStats.mean.toFixed(3)}</span><span>Mean NDVI</span></div>
-                  <div className="pg-rstat"><span className="pg-rval" style={{ color: "#4CAF50" }}>{regionStats.vegPct}%</span><span>{isZh ? "\u690D\u88AB" : "Vegetated"}</span></div>
-                  <div className="pg-rstat"><span className="pg-rval" style={{ color: "#D4A843" }}>{regionStats.barePct}%</span><span>{isZh ? "\u88F8\u5730" : "Bare"}</span></div>
-                  <div className="pg-rstat"><span className="pg-rval" style={{ color: "#1a9850" }}>{regionStats.max.toFixed(3)}</span><span>Peak</span></div>
+                  <div className="pg-rstat"><span className="pg-rval" style={{ color: "#91cf60" }}>{regionStats.mean?.toFixed(3) ?? "—"}</span><span>Mean NDVI</span></div>
+                  <div className="pg-rstat"><span className="pg-rval" style={{ color: "#4CAF50" }}>{regionStats.vegPct ?? "—"}%</span><span>{isZh ? "\u690D\u88AB" : "Vegetated"}</span></div>
+                  <div className="pg-rstat"><span className="pg-rval" style={{ color: "#D4A843" }}>{regionStats.barePct ?? "—"}%</span><span>{isZh ? "\u88F8\u5730" : "Bare"}</span></div>
+                  <div className="pg-rstat"><span className="pg-rval" style={{ color: "#1a9850" }}>{regionStats.max?.toFixed(3) ?? "—"}</span><span>Peak</span></div>
                 </div>
 
                 {changeData && (

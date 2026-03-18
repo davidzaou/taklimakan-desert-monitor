@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense, lazy } from "react";
 import IllustratedMap from "./components/IllustratedMap";
 import NDVIChart from "./components/NDVIChart";
 import NDVICompareSlider from "./components/NDVICompareSlider";
@@ -13,15 +13,7 @@ import LanguageToggle from "./components/LanguageToggle";
 import Sidebar from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import MapYearSlider from "./components/MapYearSlider";
-import MonitorView from "./components/MonitorView";
-import ProjectsView from "./components/ProjectsView";
-import TimelineView from "./components/TimelineView";
-import MissionView from "./components/MissionView";
-import SnakeRobotView from "./components/SnakeRobotView";
-import DonateView from "./components/DonateView";
-import NewsView from "./components/NewsView";
-import SatellitePlayground from "./components/SatellitePlayground";
-import GroundResearchView from "./components/GroundResearchView";
+import Spinner from "./components/Spinner";
 import SatellitePhoto from "./components/SatellitePhoto";
 import Timeline from "./components/Timeline";
 import { FiRadio } from "react-icons/fi";
@@ -31,6 +23,16 @@ import useMapState from "./hooks/useMapState";
 import useDashboard from "./hooks/useDashboard";
 import "./App.css";
 import "./components/MapView.css";
+
+const MonitorView = lazy(() => import("./components/MonitorView"));
+const ProjectsView = lazy(() => import("./components/ProjectsView"));
+const TimelineView = lazy(() => import("./components/TimelineView"));
+const MissionView = lazy(() => import("./components/MissionView"));
+const SnakeRobotView = lazy(() => import("./components/SnakeRobotView"));
+const DonateView = lazy(() => import("./components/DonateView"));
+const NewsView = lazy(() => import("./components/NewsView"));
+const SatellitePlayground = lazy(() => import("./components/SatellitePlayground"));
+const GroundResearchView = lazy(() => import("./components/GroundResearchView"));
 
 function App() {
   const { t } = useLanguage();
@@ -67,6 +69,8 @@ function App() {
     compareYears,
     loadingTs,
     loadingChange,
+    error: mapError,
+    setError: setMapError,
     handleToggleFilter,
     handleFeatureClick,
     handleYearChange,
@@ -74,6 +78,14 @@ function App() {
     handleSelectFeatureAndGoToMap,
     handleMapYearChange,
   } = useMapState(() => setActiveView("map"));
+
+  // Merge map errors into app error state
+  useEffect(() => {
+    if (mapError) {
+      setError(mapError);
+      setMapError(null);
+    }
+  }, [mapError, setMapError]);
 
   // Escape exits fullscreen
   useEffect(() => {
@@ -104,13 +116,13 @@ function App() {
         </div>
       </header>
 
-      {error && <div className="error-banner">{error} <button className="error-dismiss" onClick={() => setError(null)}>✕</button></div>}
+      {error && <div className="error-banner" role="alert">{error} <button className="error-dismiss" onClick={() => setError(null)} aria-label="Dismiss error">✕</button></div>}
 
       <div className="app-shell">
         <Sidebar activeView={activeView} onViewChange={setActiveView} />
 
-        <div className="app-main-content">
-          {/* ===== MAP ===== */}
+        <main className="app-main-content">
+          {/* ===== MAP (always rendered, hidden via CSS to preserve state) ===== */}
           <div className={`view-panel ${activeView === "map" ? "active" : ""}`}>
             <div className="map-area map-fullbleed">
               {showSatBg && (
@@ -147,50 +159,86 @@ function App() {
           </div>
 
           {/* ===== MONITOR ===== */}
-          <div className={`view-panel ${activeView === "monitor" ? "active" : ""}`}>
-            <MonitorView />
-          </div>
+          {activeView === "monitor" && (
+            <div className="view-panel active">
+              <Suspense fallback={<Spinner />}>
+                <MonitorView />
+              </Suspense>
+            </div>
+          )}
 
           {/* ===== PROJECTS ===== */}
-          <div className={`view-panel ${activeView === "projects" ? "active" : ""}`}>
-            <ProjectsView features={features} onSelectFeature={handleSelectFeatureAndGoToMap} />
-          </div>
+          {activeView === "projects" && (
+            <div className="view-panel active">
+              <Suspense fallback={<Spinner />}>
+                <ProjectsView features={features} onSelectFeature={handleSelectFeatureAndGoToMap} />
+              </Suspense>
+            </div>
+          )}
 
           {/* ===== TIMELINE ===== */}
-          <div className={`view-panel ${activeView === "timeline" ? "active" : ""}`}>
-            <TimelineView onNavigateToProject={() => setActiveView("map")} />
-          </div>
+          {activeView === "timeline" && (
+            <div className="view-panel active">
+              <Suspense fallback={<Spinner />}>
+                <TimelineView onNavigateToProject={() => setActiveView("map")} />
+              </Suspense>
+            </div>
+          )}
 
           {/* ===== HOME ===== */}
-          <div className={`view-panel ${activeView === "home" ? "active" : ""}`}>
-            <MissionView onNavigate={setActiveView} />
-          </div>
+          {activeView === "home" && (
+            <div className="view-panel active">
+              <Suspense fallback={<Spinner />}>
+                <MissionView onNavigate={setActiveView} />
+              </Suspense>
+            </div>
+          )}
 
           {/* ===== SNAKE ROBOT ===== */}
-          <div className={`view-panel ${activeView === "snake" ? "active" : ""}`}>
-            <SnakeRobotView onNavigate={setActiveView} />
-          </div>
+          {activeView === "snake" && (
+            <div className="view-panel active">
+              <Suspense fallback={<Spinner />}>
+                <SnakeRobotView onNavigate={setActiveView} />
+              </Suspense>
+            </div>
+          )}
 
           {/* ===== SATELLITE PLAYGROUND ===== */}
-          <div className={`view-panel ${activeView === "playground" ? "active" : ""}`}>
-            <SatellitePlayground />
-          </div>
+          {activeView === "playground" && (
+            <div className="view-panel active">
+              <Suspense fallback={<Spinner />}>
+                <SatellitePlayground />
+              </Suspense>
+            </div>
+          )}
 
           {/* ===== GROUND RESEARCH ===== */}
-          <div className={`view-panel ${activeView === "research" ? "active" : ""}`}>
-            <GroundResearchView onNavigate={setActiveView} />
-          </div>
+          {activeView === "research" && (
+            <div className="view-panel active">
+              <Suspense fallback={<Spinner />}>
+                <GroundResearchView onNavigate={setActiveView} />
+              </Suspense>
+            </div>
+          )}
 
           {/* ===== DONATE ===== */}
-          <div className={`view-panel ${activeView === "donate" ? "active" : ""}`}>
-            <DonateView />
-          </div>
+          {activeView === "donate" && (
+            <div className="view-panel active">
+              <Suspense fallback={<Spinner />}>
+                <DonateView />
+              </Suspense>
+            </div>
+          )}
 
           {/* ===== NEWS ===== */}
-          <div className={`view-panel ${activeView === "news" ? "active" : ""}`}>
-            <NewsView onNavigate={setActiveView} />
-          </div>
-        </div>
+          {activeView === "news" && (
+            <div className="view-panel active">
+              <Suspense fallback={<Spinner />}>
+                <NewsView onNavigate={setActiveView} />
+              </Suspense>
+            </div>
+          )}
+        </main>
       </div>
 
       <StatusBar dashboardData={dashboardData} />

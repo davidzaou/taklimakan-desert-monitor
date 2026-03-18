@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   DESERT_OUTLINE,
@@ -58,7 +58,7 @@ function seededRand(x, y) {
 
 // ─── TILE COMPONENTS ─────────────────────────────
 
-function SandTile({ x, y, variant = 0, fillColor }) {
+const SandTile = React.memo(function SandTile({ x, y, variant = 0, fillColor }) {
   return (
     <g transform={`translate(${x},${y})`}>
       <rect width={TILE} height={TILE} rx={4} className="sand-block" style={fillColor ? { fill: fillColor } : undefined} />
@@ -79,9 +79,9 @@ function SandTile({ x, y, variant = 0, fillColor }) {
       )}
     </g>
   );
-}
+});
 
-function SteppeTile({ x, y, variant = 0 }) {
+const SteppeTile = React.memo(function SteppeTile({ x, y, variant = 0 }) {
   return (
     <g transform={`translate(${x},${y})`}>
       <rect width={TILE} height={TILE} rx={4} className="steppe-block" />
@@ -101,9 +101,9 @@ function SteppeTile({ x, y, variant = 0 }) {
       {/* variant 2 = plain ground, just the base rect */}
     </g>
   );
-}
+});
 
-function TreeTile({ x, y, growth = 1 }) {
+const TreeTile = React.memo(function TreeTile({ x, y, growth = 1 }) {
   const c1 = growth < 0.35 ? "#A5D6A7" : growth < 0.65 ? "#66BB6A" : "#2E7D32";
   const c2 = growth < 0.35 ? "#C8E6C9" : growth < 0.65 ? "#81C784" : "#388E3C";
   const h = 6 + growth * 8; // taller trees
@@ -120,9 +120,9 @@ function TreeTile({ x, y, growth = 1 }) {
       </g>
     </g>
   );
-}
+});
 
-function WaterTile({ x, y, variant = 0 }) {
+const WaterTile = React.memo(function WaterTile({ x, y, variant = 0 }) {
   const wy = variant * 0.8;
   const delay = ((x * 7 + y * 13) % 5) * 0.4; // stagger animation per tile
   return (
@@ -134,9 +134,9 @@ function WaterTile({ x, y, variant = 0 }) {
       <circle cx={TILE * 0.3 + variant * 3} cy={TILE * 0.35} r={1} className="water-sparkle" style={{ animationDelay: `${delay + 1}s` }} />
     </g>
   );
-}
+});
 
-function RockTile({ x, y, height = 1 }) {
+const RockTile = React.memo(function RockTile({ x, y, height = 1 }) {
   const ph = 6 + height * 8;
   return (
     <g transform={`translate(${x},${y})`}>
@@ -153,7 +153,7 @@ function RockTile({ x, y, height = 1 }) {
       )}
     </g>
   );
-}
+});
 
 // ─── CITY MARKERS ────────────────────────────────
 
@@ -217,7 +217,8 @@ function CityMarker({ feature, onClick, lang }) {
   const layout = CITY_LAYOUTS[key] || { blds: [[-10,18,"#5C6BC0"],[2,24,"#3949AB"],[14,14,"#7986CB"]], decor: null };
 
   return (
-    <g className="city-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}>
+    <g className="city-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}
+      role="button" tabIndex={0} aria-label={name} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(feature); } }}>
       {/* glow platform */}
       <ellipse cx={2} cy={4} rx={28} ry={7} className="city-glow" />
       <ellipse cx={2} cy={3} rx={24} ry={5} className="city-shadow" />
@@ -242,7 +243,8 @@ function VegetationMarker({ feature, onClick, lang }) {
   const [x, y] = toSVG(feature.lng, feature.lat);
   const name = lang === "zh" ? feature.name_zh : feature.name_en;
   return (
-    <g className="feat-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}>
+    <g className="feat-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}
+      role="button" tabIndex={0} aria-label={name} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(feature); } }}>
       <circle r={18} className="feat-ring feat-ring-veg" />
       <circle r={14} className="feat-bg feat-bg-veg" />
       <rect x={-1.5} y={1} width={3} height={6} rx={1} fill="#fff" />
@@ -263,7 +265,8 @@ function ProjectMarker({ feature, onClick, lang, year }) {
   const rc = p >= 1 ? "#43A047" : p > 0.5 ? "#7CB342" : "#FB8C00";
 
   return (
-    <g className="feat-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}>
+    <g className="feat-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}
+      role="button" tabIndex={0} aria-label={`${name} — ${Math.round(p * 100)}% complete`} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(feature); } }}>
       <circle r={r} fill="none" stroke="#e0e0e0" strokeWidth={3} />
       <circle r={r} fill="none" stroke={rc} strokeWidth={3}
         strokeDasharray={circ} strokeDashoffset={off}
@@ -284,7 +287,8 @@ function WaterMarker({ feature, onClick, lang }) {
   const [x, y] = toSVG(feature.lng, feature.lat);
   const name = lang === "zh" ? feature.name_zh : feature.name_en;
   return (
-    <g className="feat-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}>
+    <g className="feat-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}
+      role="button" tabIndex={0} aria-label={name} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(feature); } }}>
       <circle r={18} className="feat-ring feat-ring-water" />
       <circle r={14} className="feat-bg feat-bg-water" />
       <path d="M0,-7 C-3,-3 -5,1 -5,3 A5,5 0 0,0 5,3 C5,1 3,-3 0,-7Z" fill="#fff" />
@@ -297,7 +301,8 @@ function DesertMarker({ feature, onClick, lang }) {
   const [x, y] = toSVG(feature.lng, feature.lat);
   const name = lang === "zh" ? feature.name_zh : feature.name_en;
   return (
-    <g className="feat-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}>
+    <g className="feat-marker" transform={`translate(${x},${y})`} onClick={() => onClick(feature)}
+      role="button" tabIndex={0} aria-label={name} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(feature); } }}>
       <circle r={18} className="feat-ring feat-ring-sand" />
       <circle r={14} className="feat-bg feat-bg-sand" />
       <path d="M-6,2 Q-3,-3 0,2 Q3,-3 6,2" stroke="#fff" strokeWidth={2} fill="none" strokeLinecap="round" />
@@ -637,6 +642,7 @@ export default function IllustratedMap({ features, onFeatureClick, selectedFeatu
       onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
       <svg ref={svgRef} viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" className="illustrated-map"
+        role="img" aria-label="Interactive illustrated map of the Taklimakan Desert showing vegetation, cities, and projects"
         style={{ transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`, cursor: dragging ? "grabbing" : "grab" }}>
         <defs>
           <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
@@ -790,7 +796,7 @@ export default function IllustratedMap({ features, onFeatureClick, selectedFeatu
       {/* Tile count badge */}
       {/* Loading indicator for NDVI data */}
       {!ndviGrid && (
-        <div className="ndvi-loading-badge">
+        <div className="ndvi-loading-badge" aria-live="polite">
           <span className="ndvi-loading-dot" />
           Loading satellite data...
         </div>

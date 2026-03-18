@@ -1,11 +1,6 @@
 node_modules/
 dist/
 .env
-*.json
-!package.json
-!railway.json
-!vite.config.js
-!nixpacks.toml
 backend/static/
 backend/__pycache__/
 backend/services/__pycache__/

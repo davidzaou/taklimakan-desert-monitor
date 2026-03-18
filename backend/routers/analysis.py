@@ -1,11 +1,13 @@
 """API routes for NDVI analysis — auto-switches between GEE and demo data."""
 
+import asyncio
 import os
 import logging
 import threading
+from datetime import datetime
 
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, field_validator, model_validator
 
 from services.ndvi_service import (
     PRESET_REGIONS,
@@ -13,6 +15,8 @@ from services.ndvi_service import (
     generate_demo_grid,
     generate_demo_timeseries,
 )
+
+from rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -37,6 +41,51 @@ def _use_gee():
     return USE_GEE and _gee_ready
 
 
+# ─── Validators ──────────────────────────────────
+
+# Taklimakan bounding box (generous)
+_TAK_BBOX = {"min_lng": 73, "max_lng": 92, "min_lat": 34, "max_lat": 45}
+_MAX_COORD_POINTS = 500
+_CURRENT_YEAR = datetime.now().year
+
+
+def _validate_geometry(geometry: dict) -> dict:
+    """Validate GeoJSON structure and coordinates within Taklimakan region."""
+    if not isinstance(geometry, dict):
+        raise ValueError("geometry must be a GeoJSON object")
+    geo_type = geometry.get("type")
+    if geo_type not in ("Polygon", "MultiPolygon", "Point"):
+        raise ValueError("geometry.type must be Polygon, MultiPolygon, or Point")
+    coords = geometry.get("coordinates")
+    if not coords:
+        raise ValueError("geometry.coordinates is required")
+    # Flatten to check individual points
+    flat = []
+    def _flatten(c):
+        if isinstance(c, (list, tuple)) and len(c) >= 2 and isinstance(c[0], (int, float)):
+            flat.append(c)
+        elif isinstance(c, (list, tuple)):
+            for item in c:
+                _flatten(item)
+    _flatten(coords)
+    if len(flat) == 0:
+        raise ValueError("geometry contains no coordinate points")
+    if len(flat) > _MAX_COORD_POINTS:
+        raise ValueError(f"geometry has too many points ({len(flat)} > {_MAX_COORD_POINTS})")
+    for lng, lat, *_ in flat:
+        if not (_TAK_BBOX["min_lng"] <= lng <= _TAK_BBOX["max_lng"]):
+            raise ValueError(f"longitude {lng} outside Taklimakan region [{_TAK_BBOX['min_lng']}, {_TAK_BBOX['max_lng']}]")
+        if not (_TAK_BBOX["min_lat"] <= lat <= _TAK_BBOX["max_lat"]):
+            raise ValueError(f"latitude {lat} outside Taklimakan region [{_TAK_BBOX['min_lat']}, {_TAK_BBOX['max_lat']}]")
+    return geometry
+
+
+def _validate_year(year: int, field_name: str = "year") -> int:
+    if year < 2015 or year > _CURRENT_YEAR:
+        raise ValueError(f"{field_name} must be between 2015 and {_CURRENT_YEAR}")
+    return year
+
+
 # ─── Models ──────────────────────────────────────
 
 class TimeseriesRequest(BaseModel):
@@ -44,11 +93,37 @@ class TimeseriesRequest(BaseModel):
     start_year: int = 2015
     end_year: int = 2025
 
+    @field_validator("geometry")
+    @classmethod
+    def check_geometry(cls, v):
+        return _validate_geometry(v)
+
+    @field_validator("start_year", "end_year")
+    @classmethod
+    def check_years(cls, v, info):
+        return _validate_year(v, info.field_name)
+
+    @model_validator(mode="after")
+    def check_year_range(self):
+        if self.start_year > self.end_year:
+            raise ValueError("start_year must be ≤ end_year")
+        return self
+
 
 class AnalyzeRequest(BaseModel):
     geometry: dict
     year1: int
     year2: int
+
+    @field_validator("geometry")
+    @classmethod
+    def check_geometry(cls, v):
+        return _validate_geometry(v)
+
+    @field_validator("year1", "year2")
+    @classmethod
+    def check_years(cls, v, info):
+        return _validate_year(v, info.field_name)
 
 
 class GridRequest(BaseModel):
@@ -56,11 +131,29 @@ class GridRequest(BaseModel):
     year: int = 2024
     resolution: int = 40
 
+    @field_validator("geometry")
+    @classmethod
+    def check_geometry(cls, v):
+        return _validate_geometry(v)
+
+    @field_validator("year")
+    @classmethod
+    def check_year(cls, v):
+        return _validate_year(v)
+
+    @field_validator("resolution")
+    @classmethod
+    def check_resolution(cls, v):
+        if v < 5 or v > 100:
+            raise ValueError("resolution must be between 5 and 100")
+        return v
+
 
 # ─── Endpoints ───────────────────────────────────
 
 @router.get("/data-source")
-def get_data_source():
+@limiter.limit("60/minute")
+def get_data_source(request: Request):
     """Return current data source status and configuration."""
     if _use_gee():
         return {"source": "gee", "status": "active", "description": "Real-time Sentinel-2 via Google Earth Engine"}
@@ -72,7 +165,8 @@ def get_data_source():
 
 
 @router.get("/presets")
-def get_presets():
+@limiter.limit("60/minute")
+def get_presets(request: Request):
     """Return all preset analysis regions."""
     return {
         key: {"name": val["name"], "description": val["description"], "geometry": val["geometry"]}
@@ -81,45 +175,51 @@ def get_presets():
 
 
 @router.post("/timeseries")
-def get_timeseries(request: TimeseriesRequest):
+@limiter.limit("30/minute")
+async def get_timeseries(request: Request, body: TimeseriesRequest):
     """NDVI time series. Falls back to demo on GEE failure."""
     if _use_gee():
         try:
             from services.gee_service import get_ndvi_timeseries
-            data = get_ndvi_timeseries(request.geometry, request.start_year, request.end_year)
+            data = await asyncio.to_thread(get_ndvi_timeseries, body.geometry, body.start_year, body.end_year)
             return {"data": data, "source": "gee"}
         except Exception as e:
             logger.error("GEE timeseries error: %s — demo fallback", e)
 
-    return {"data": generate_demo_timeseries(request.start_year, request.end_year), "source": "demo"}
+    data = await asyncio.to_thread(generate_demo_timeseries, body.start_year, body.end_year)
+    return {"data": data, "source": "demo"}
 
 
 @router.post("/analyze")
-def analyze_change(request: AnalyzeRequest):
+@limiter.limit("30/minute")
+async def analyze_change(request: Request, body: AnalyzeRequest):
     """NDVI change analysis. Falls back to demo on GEE failure."""
     if _use_gee():
         try:
             from services.gee_service import get_ndvi_change
-            data = get_ndvi_change(request.geometry, request.year1, request.year2)
+            data = await asyncio.to_thread(get_ndvi_change, body.geometry, body.year1, body.year2)
             return {"data": data, "source": "gee"}
         except Exception as e:
             logger.error("GEE change analysis error: %s — demo fallback", e)
 
-    return {"data": generate_demo_change(request.year1, request.year2), "source": "demo"}
+    data = await asyncio.to_thread(generate_demo_change, body.year1, body.year2)
+    return {"data": data, "source": "demo"}
 
 
 @router.post("/grid")
-def get_ndvi_grid(request: GridRequest):
+@limiter.limit("30/minute")
+async def get_ndvi_grid(request: Request, body: GridRequest):
     """NDVI grid for heatmap. Falls back to demo on GEE failure."""
     if _use_gee():
         try:
             from services.gee_service import get_ndvi_grid as gee_grid
-            grid = gee_grid(request.geometry, request.year, request.resolution)
-            return {"data": grid, "year": request.year, "source": "gee"}
+            grid = await asyncio.to_thread(gee_grid, body.geometry, body.year, body.resolution)
+            return {"data": grid, "year": body.year, "source": "gee"}
         except Exception as e:
             logger.error("GEE grid error: %s — demo fallback", e)
 
-    return {"data": generate_demo_grid(request.geometry, request.year, request.resolution), "year": request.year, "source": "demo"}
+    grid = await asyncio.to_thread(generate_demo_grid, body.geometry, body.year, body.resolution)
+    return {"data": grid, "year": body.year, "source": "demo"}
 
 
 # ─── Cached NDVI Grid for Map Tiles ──────────────
@@ -153,7 +253,8 @@ def _fetch_ndvi_grid_bg():
 
 
 @router.get("/ndvi-grid-cache")
-def get_ndvi_grid_cache():
+@limiter.limit("60/minute")
+def get_ndvi_grid_cache(request: Request):
     """
     Return cached NDVI grid for the full Taklimakan region.
     First call triggers a background fetch (~15-20s for GEE).

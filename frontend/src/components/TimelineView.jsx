@@ -268,7 +268,7 @@ export default function TimelineView({ onNavigateToProject }) {
                 <YAxis domain={["auto", "auto"]} tick={{ fill: "#9ba8b5", fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
                 <Tooltip
                   contentStyle={{ background: "#16213e", border: "1px solid #2a2a4a", borderRadius: 8, color: "#e0e0e0", fontSize: 12 }}
-                  formatter={(v) => [v.toFixed(4), "Mean NDVI"]}
+                  formatter={(v) => [v?.toFixed(4) ?? "—", "Mean NDVI"]}
                 />
                 {CHART_MILESTONES.map((cm) => (
                   <ReferenceLine
