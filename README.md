@@ -137,3 +137,4 @@ frontend/         React frontend (Vite)
 
 ## License
 MIT
+
