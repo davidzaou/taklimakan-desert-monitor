@@ -1,88 +1,139 @@
 # Taklimakan Desert Vegetation Tracker
+### Guarding the Green Wall 🌿
 
-Interactive monitoring of vegetation change, afforestation projects, and desert containment around the Taklimakan Desert using Sentinel-2 satellite data via Google Earth Engine.
+Real-time satellite monitoring of vegetation along the Taklimakan Desert greenbelt using Google Earth Engine + Sentinel-2 data.
 
-## Architecture
-
-- **Frontend:** React + Vite (illustrated SVG map, Leaflet satellite playground, Recharts)
-- **Backend:** FastAPI (Python) — serves API + built frontend in production
-- **Data:** Google Earth Engine (Sentinel-2 NDVI) with demo fallback
+## Live Site
+[your-domain-here] (coming soon)
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 20+
 - Python 3.12+
+- Node.js 20+
+- Google Earth Engine service account (see below)
 
-### Development
-
+### 1. Clone the repo
 ```bash
-# Backend
+git clone https://github.com/zoudaizhe2-png/taklimakan-desert-monitor.git
+cd taklimakan-desert-monitor
+```
+
+### 2. Backend setup
+```bash
 cd backend
+python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
-cp .env.example .env  # edit to add GEE credentials (optional)
-python -m uvicorn main:app --reload --port 8001
-
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev
 ```
 
-The frontend dev server runs on `http://localhost:5173` and proxies API calls to the backend on port 8001.
-
-### Production Build
-
+### 3. Configure environment
 ```bash
-bash build.sh  # builds frontend → backend/static
-cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000
+cp .env.example .env
+# Edit .env with your GEE credentials (see "GEE Setup" below)
 ```
 
-### Docker
+### 4. Seed the database
+```bash
+python seed.py
+```
+
+### 5. Frontend setup
+```bash
+cd ../frontend
+npm install
+```
+
+### 6. Run locally
+```bash
+# Terminal 1 (backend):
+cd backend && python -m uvicorn main:app --reload --port 8000
+
+# Terminal 2 (frontend):
+cd frontend && npm run dev
+```
+
+Open http://localhost:5173
+
+## GEE Setup (Google Earth Engine)
+
+1. Go to https://console.cloud.google.com
+2. Create a project (or use existing)
+3. Enable the Earth Engine API
+4. Create a service account + download JSON key
+5. Register the service account at https://signup.earthengine.google.com/#!/service_accounts
+6. Set these in your `.env`:
+```
+GEE_PROJECT=your-project-id
+GEE_SERVICE_ACCOUNT_KEY=/path/to/your-key.json
+GEE_SERVICE_ACCOUNT_EMAIL=your-sa@your-project.iam.gserviceaccount.com
+```
+
+Without GEE credentials, the app runs in demo mode with sample data.
+
+## Deploy with Docker
 
 ```bash
 docker build -t desert-tracker .
-docker run -p 8000:8000 desert-tracker
+docker run -p 8000:8000 --env-file backend/.env desert-tracker
 ```
 
-## GEE Setup (Optional)
+## Deploy to Railway
 
-Without GEE credentials, the app runs in demo mode with simulated data. To enable real satellite data:
+1. Connect your GitHub repo to Railway
+2. Railway auto-detects the Dockerfile
+3. Set environment variables in Railway dashboard:
+   - `GEE_PROJECT`
+   - `GEE_SERVICE_ACCOUNT_KEY` (paste the entire JSON content as a string)
+   - `GEE_SERVICE_ACCOUNT_EMAIL`
+   - `CORS_ORIGINS=https://your-domain.org`
+4. Deploy
 
-1. Create a GCP project and enable the Earth Engine API
-2. Create a service account and download the JSON key
-3. Set `GEE_SERVICE_ACCOUNT_KEY` in your `.env` file
-4. See `backend/.env.example` for full details
+## Deploy to Cloudflare Pages + Railway
+
+If using a custom domain on Cloudflare:
+1. Deploy backend to Railway (gets a *.up.railway.app URL)
+2. In Cloudflare DNS, add:
+   - CNAME record: your-domain.org → your-app.up.railway.app
+   - Or use Cloudflare Pages for frontend + Railway for API only
+3. Set CORS_ORIGINS in Railway to your custom domain
 
 ## Project Structure
 
 ```
-backend/
-  main.py              # FastAPI app, CORS, error handlers
-  routers/             # API route handlers
-    analysis.py        # NDVI timeseries, grid, change detection
-    dashboard_routes.py # Dashboard stats, satellite preview/image
-    features.py        # Map features, dashboard summary
-  services/            # Business logic
-    gee_service.py     # Google Earth Engine integration
-    ndvi_service.py    # Demo data generation
-  tests/               # pytest test suite
+backend/          FastAPI backend (Python)
+├── main.py       App entry point
+├── routers/      API endpoints
+├── services/     GEE integration, NDVI analysis
+├── models/       Database models
+└── tests/        Backend tests
 
-frontend/
-  src/
-    api/client.js      # API client with error handling + timeout
-    components/        # React components
-    hooks/             # Custom hooks (useMapState, useDataCache)
-    i18n/              # English/Chinese translations
-    data/              # Map shape data
+frontend/         React frontend (Vite)
+├── src/
+│   ├── components/   Views and UI components
+│   ├── hooks/        Custom React hooks
+│   ├── i18n/         Translations (EN/ZH)
+│   └── api/          API client
+└── dist/             Built assets
 ```
 
-## Environment Variables
+## Features
+- 🛰️ Real-time satellite NDVI data (Sentinel-2 via Google Earth Engine)
+- 🗺️ Interactive illustrated map with click-to-inspect
+- 📊 Time series analysis (2015-present)
+- 🔬 Satellite playground for custom analysis
+- 🐍 Snake robot field inspection concept
+- 🌍 Bilingual (English + Chinese)
+- 🌙 Dark/light theme
+- 📱 Mobile responsive
+- 🔐 User authentication (JWT)
+- ⚡ Real-time updates (WebSocket)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GEE_SERVICE_ACCOUNT_KEY` | Path to GEE service account JSON key | - |
-| `GEE_SERVICE_ACCOUNT_EMAIL` | Service account email | - |
-| `GEE_PROJECT` | GCP project ID (alternative to key) | - |
-| `CORS_ORIGINS` | Comma-separated allowed origins | `http://localhost:5173` |
-| `PORT` | Server port | `8000` |
+## Tech Stack
+- **Frontend:** React 19, Vite 8, Leaflet, Recharts
+- **Backend:** FastAPI, SQLAlchemy 2.0, Uvicorn
+- **Data:** Google Earth Engine, Sentinel-2, SQLite
+- **Deploy:** Docker, Railway, GitHub Actions CI
+
+## License
+MIT
